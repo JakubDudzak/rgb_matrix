@@ -18,11 +18,11 @@ Tento kód v skratke funguje nasledovne:
 
 5. Ak sa dosiahne maximálna hodnota PWM, vynuluje sa a inkrementuje sa riadok. Ak riadok dosiahne hodnoty ROWS_MAX, vynuluje sa. Týmto sme dosiahli efekt "viacerých riadkov" aj keď v skutočnosti sa vždy zapisuje len jeden riadok, jednej úrovne PWM. Robí sa to ale tak týchlo, že si to ľudské oko nevšimne. Táto technika sa volá *multiplexing*.
 
-6. Taktiež je tu pripojený potenciometer, s 8 bitovým rozlíšením a/d prevodníka, ktorý je použitý na prispôsobovanie rýchlosti animácií na displeji.
+6. Taktiež je tu pripojený potenciometer, s 8 bitovým rozlíšením a/d prevodníka, ktorého hodnota je zapisovaná do globálnej premennej potentiometer_value pre ďalšie spracovanie v kóde.
 
-7. Hodnota tohto potenciometra je zobrazovaná na I2C displeji.
+7. Taktiež na pozadí funguje prerušenie pri prijatí dát z UARTU, ktoré slúži na ovládanie toho, čo sa má na tomto 8x8 displeji zobraziť. V skratke čaká, kým príjme reťazec ukončený '\r', ktorý by mal byť vo formáte `"FARBA_PISMENA,PISMENO,FARBA_POZADIA\r"`. Po prijatí tohto reťazca vykreslí požadované písmeno, v požadovaných farbách. Ak farby nepozná, tak nastaví hodnotu `BLACK`
 
-8. Taktiež na pozadí funguje prerušenie pri prijatí dát z UARTU, ktoré slúži na ovládanie toho, čo sa má na tomto displeji zobraziť.
+8. Na i2c displeji sa pri každom prijatí dát z USARTU vykreslia aktuálne farby, znak a hodnota potenciometra.
 
 
 
@@ -364,54 +364,42 @@ Statické pole "colours" obsahuje 42 položiek štruktúry "Colour", ktoré pred
 
 Ak potrebujeme pridať alebo upraviť farby v poli, musíme aktualizovať definíciu štruktúry "Colour" a pole "colours".
 
-# main.c
+# súbor `main.c`
 
-Súbor `main.c` obsahuje funkciu `main`, ktorá riadi beh programu. V tomto súbore sú tiež definované interrupt service routines pre timer, A/D prevodník a USART.
 
-## Použité knižnice
+## Knižnice
 
-Súbor `main.c` používa niekoľko štandardných knižníc pre jazyk C vrátane:
-- avr/io.h
-- avr/interrupt.h
-- math.h
-- util/delay.h
-- stdlib.h
-- string.h
-- stdio.h
-
-a niekoľko vlastných knižníc:
-- `setup.h`
-- `i2c_lcd.h`
-- `utils.h`
-- `animations.h`
-- `bitmasks.h`
-- `colours.h`
+Program využíva štandardné knižnice pre jazyk C, ako sú `avr/io.h`, `avr/interrupt.h`, `math.h`, `util/delay.h`, `stdlib.h`, `string.h` a `stdio.h`, ako aj vlastné knižnice `setup.h`, `i2c_lcd.h`, `utils.h`, `animations.h`, `bitmasks.h` a `colours.h`.
 
 ## Globálne premenné
 
-- `potentiometer_value` - premenná typu uint8_t, ktorá obsahuje hodnotu prevodníka A/D. Je aktualizovaná v interrupt service routine pre A/D prevodník.
+- `potentiometer_value` - premenná typu `uint8_t`, ktorá obsahuje hodnotu prevodníka A/D. Je aktualizovaná v interrupt service routine pre A/D prevodník.
 
-- `matrix_rgb` - globálny 3D array, ktorý obsahuje RGB hodnoty každého LED na matici LED displeja, ako aj hodnoty PWM. Má tri rozmery: veĺkosť PWM, počet riadkov a počet bajtov na riadok. Do tohto arrayu nezapisujeme priamo, ale cez funkcie, definované v `utils.c`, ktoré prerátavajú hodnoty riadkov, stĺpcov, jasu a podobne a zapisujú ich do tohto arrayu. 
+- `matrix_rgb` - globálny 3D array, ktorý obsahuje RGB hodnoty každého LED na matici LED displeja, ako aj hodnoty PWM. Má tri rozmery: veľkosť PWM, počet riadkov a počet bajtov na riadok. Do tohto arrayu nezapisujeme priamo, ale cez funkcie, definované v `utils.c`, ktoré prerátavajú hodnoty riadkov, stĺpcov, jasu a podobne a zapisujú ich do tohto arrayu.
 
-- `receiving_str` - premenná typu uint8_t, ktorá sa používa v interrupt service routine pre USART na indikovanie, či sa práve prijíma reťazec.
+- `receiving_str` - premenná typu `uint8_t`, ktorá sa používa v interrupt service routine pre USART na indikovanie, či sa práve prijíma reťazec.
+
+- `received_str` - retazec, ktoý sa prijal
 
 ## Interrupt Service Routines
 
-- `TIMER1_COMPA_vect` - táto funkcia sa spúšťa pri príchode signálu z časovača TIMER1. Aktualizuje sa hodnota premenných `current_row` a `pwm_level`, čím sa ovláda PWM signál pre riadenie jasu LED diód. 
+- `TIMER1_COMPA_vect` - táto funkcia sa spúšťa pri príchode signálu z časovača TIMER1. Aktualizuje sa hodnota premenných `current_row` a `pwm_level`, čím sa ovláda PWM signál pre riadenie jasu LED diód.
 
 - `ADC_vect` - táto funkcia sa spúšťa po dokončení prevodu A/D prevodníka. Premenná `potentiometer_value` sa aktualizuje na hodnotu, ktorú prevodník vráti.
 
-- `USART_RX_vect` - táto funkcia sa spúšťa pri prijatí dát z USART. Aktualizujú sa RGB hodnoty každej LED na matici LED displeja na základe prijatých dát.
+- `USART_RX_vect` - táto funkcia sa spúšťa pri prijatí dát z USART. V tomto prípade slúži na príjem reťazca, ktorý obsahuje farby a znak, ktorý sa má zobraziť na LED matici, vo formáte `"FARBA_PISMENA,PISMENO,FARBA_POZADIA"` a je ukončený znakom '\r'.
 
-## Funkcia main
+## Funkcia `main`
 
-V hlavnej funkcii `main` sú vykonávané inicializačné kroky pre riadenie LED diód a ďalších periférií. Je tu tiež cyklus, ktorý sa vykonáva neustále, ale zatiaľ nie je využitý.
+Na začiatku funkcie sa vykonajú inicializačné kroky pre rôzne periférie, ako napríklad nastavenie pinov, SPI rozhrania, časovača, USART rozhrania, I2C rozhrania, LCD displeja a A/D prevodníka. Po inicializácii sa spúšťa cyklus, ktorý sa vykonáva neustále.
 
-Je tu tiež časť kódu, ktorá používa funkciu `matrix_write_letter`, ktorá napíše písmeno na maticu LED displeja s farbou písmena a farbou pozadia.
+V tomto cykle sa neustále kontoluje, či sa práve nepríjma reťazec cez USART rozhranie. Ak áno, tak sa reťazec spracuje a na základe neho sa zobrazí na LED matici a LCD displeji. Reťazec obsahuje informácie o farbe písma, pozadia a písmene, ktoré sa majú zobraziť.
 
-Momentálne sú však niektoré časti kódu zakomentované, takže sa nevykonávajú.
+Tieto informácie sa spracúvajú funkciou sscanf, ktorá z reťazca vyextrahuje jednotlivé hodnoty. Potom sa volá funkcia matrix_write_letter, ktorá napíše dané písmeno na maticu LED displeja s farbou písma a pozadia. Okrem toho sa na LCD displeji zobrazia informácie o farbe písma, pozadia a hodnota z A/D prevodníka.
 
-# i2c_lcd.h
+
+
+# súbor `i2c_lcd.c`
 
 Tento súbor obsahuje funkcie pre komunikáciu s I2C LCD displejom pomocou PCF8574 I/O expanderu. 
 
@@ -428,6 +416,12 @@ Táto funkcia slúži na odosielanie znakov na LCD displej. Parametrom funkcie j
 
 ### `void lcd_send_string(uint8_t row, uint8_t col, char *str)`
 Táto funkcia slúži na odosielanie reťazcov na LCD displej. Parametrami funkcie sú riadok a stĺpec, kde sa má reťazec zobraziť a samotný reťazec.
+
+### `void lcd_send_char(uint8_t row, uint8_t col, char character);`
+Táto funkcia slúži na odosielanie charakterov na LCD displej. Parametrami funkcie sú riadok a stĺpec, kde sa má charakter zobraziť a samotný charakter.
+
+### `void lcd_send_number_at_end(uint8_t row, int number);`
+Táto funkcia slúži na odosielanie čísiel na LCD displej. Parametrami funkcie je riadok, kde sa má číslo zobraziť, spolu so samotným číslom.
 
 ### `void lcd_clear(void)`
 Táto funkcia slúži na vymazanie obsahu displeja.
