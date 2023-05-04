@@ -5,6 +5,7 @@
         "delay.h": "c",
         "io.h": "c",
         "new": "c",
-        "bitmasks.h": "c"
+        "bitmasks.h": "c",
+        "colours.h": "c"
     }
 }

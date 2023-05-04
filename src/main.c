@@ -93,10 +93,10 @@ int main(void){
 	sei();
 
 	matrix_write_letter('A',"RED","PURPLE");
-	for (char i = 'A'; i <= 'Z'; i++)
+	for (char i = 0; i < 0x7F; i++)
 	{
 		matrix_write_letter(i,"GREEN","MAGENTA");
-		_delay_ms(10);
+		_delay_ms(00);
 	}
 	
 	while (1) {
@@ -110,8 +110,7 @@ int main(void){
 			USART_transmit_string(letter_colour);
 			USART_transmit_string("\n\rletter is:    ");
 			USART_transmit(letter);
-			USART_transmit_string("\n\rbackground colour s
-			is:    ");
+			USART_transmit_string("\n\rbackground colour is:    ");
 			USART_transmit_string(background_colour);
 			USART_transmit_string("\n\r############################");
 			lcd_clear();

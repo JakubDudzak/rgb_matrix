@@ -265,29 +265,19 @@ Funkcia `update_matrix_hsv` slúži na aktualizáciu farieb pre všetky LED dió
 #### Návratová hodnota
 - Funkcia nemá návratovú hodnotu
 
-## Súbor `bitmasks.c`
+# Súbor `bitmasks.c`
 
 ## Popis
 
-Súbor `bitmasks.c` obsahuje bitmasky pre jednotlivé písmená, ktoré vie vypísať na RGB displej, ako aj funkciu na napísanie týchto písmen.
+Súbor `bitmasks.c` importuje bitmasky pre jednotlivé písmená, zo súboru `charset.c`, ktoré vie vypísať na RGB displej, ako aj funkciu na napísanie týchto písmen.
 
 ## Funkcie
 
-### `uint8_t* get_letter_bits(char letter)`
-
-Funkcia vráti bitmasku pre požadovaný znak.
-
-#### Vstupné parametre
-- Funkcia nemá žiadne vstupné parametre
-
-#### Návratová hodnota
-- Funkcia nemá návratovú hodnotu
-
 ### `void matrix_write_letter(char letter,const char* background_colour,const char* letter_colour)`
 
-Funkcia najprv získa bitmasku pre požadované písmeno pomocou funkcie `get_letter_bits()`. Následne sa pre každý riadok a stĺpec tejto bitmasky preiteruje a zobrazia sa príslušné pixely na LED matici. Ak je daný bit nastavený, pixel sa zobrazí farbou písmena. Ak nie, zobrazí sa farbou pozadia. Farby sa prevádzajú z reťazca (napr. RED, BLUE, PURPLE...) na RGB pomocou funkcie `get_colour()`, definovanej v `colours.h`.
+Funkcia najprv získa bitmasku pre požadované písmeno pomocou funkcie výberom z premennej `charset[character_to_display]`. Následne sa pre každý riadok a stĺpec tejto bitmasky preiteruje a zobrazia sa príslušné pixely na LED matici. Ak je daný bit nastavený, pixel sa zobrazí farbou písmena. Ak nie, zobrazí sa farbou pozadia. Farby sa prevádzajú z reťazca (napr. RED, BLUE, PURPLE...) na RGB pomocou funkcie `get_colour()`, definovanej v `colours.h`.
 
-# colours.c
+# Súbor `colours.c`
 
 ## Popis
 Tento súbor obsahuje deklaráciu statického poľa štruktúr "Colour", ktoré obsahuje názvy farieb a ich RGB hodnoty. Súbor obsahuje aj funkciu "get_colour", ktorá vyhľadáva farbu v poli podľa názvu a vracia jej RGB hodnoty.
@@ -364,7 +354,7 @@ Statické pole "colours" obsahuje 42 položiek štruktúry "Colour", ktoré pred
 
 Ak potrebujeme pridať alebo upraviť farby v poli, musíme aktualizovať definíciu štruktúry "Colour" a pole "colours".
 
-# súbor `main.c`
+# Súbor `main.c`
 
 
 ## Knižnice
@@ -399,7 +389,7 @@ Tieto informácie sa spracúvajú funkciou sscanf, ktorá z reťazca vyextrahuje
 
 
 
-# súbor `i2c_lcd.c`
+# Súbor `i2c_lcd.c`
 
 Tento súbor obsahuje funkcie pre komunikáciu s I2C LCD displejom pomocou PCF8574 I/O expanderu. 
 
