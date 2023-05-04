@@ -1,0 +1,44 @@
+#define RED 255,0,0
+#define GREEN 0,255,0
+#define BLUE 0,0,255
+#define YELLOW 255, 255, 0
+#define CYAN 0, 255, 255
+#define MAGENTA 255, 0, 255
+#define ORANGE 255, 128, 0
+#define PURPLE 128, 0, 255
+#define LIME 128, 255, 0
+#define TEAL 0, 128, 128
+#define PINK 255, 0, 128
+#define OLIVE 128, 128, 0
+#define LAVENDER 204, 153, 255
+#define BROWN 153, 102, 51
+#define BEIGE 255, 204, 153
+#define MAROON 128, 0, 0
+#define NAVY 0, 0, 128
+#define FOREST_GREEN 0, 128, 0
+#define GRAY 128, 128, 128
+#define DARK_RED 224, 0, 0
+#define DARK_GREEN 0, 64, 0
+#define DARK_BLUE 0, 0, 64
+#define DARK_CYAN 0, 64, 64
+#define DARK_MAGENTA 64, 0, 64
+#define DARK_YELLOW 128, 128, 0
+#define LIGHT_YELLOW 255, 255, 128
+#define LIGHT_CYAN 128, 255, 255
+#define LIGHT_MAGENTA 255, 128, 255
+#define LIGHT_GREEN 128, 255, 128
+#define LIGHT_BLUE 128, 128, 255
+#define LIGHT_GRAY 192, 192, 192
+#define DARK_GRAY 64, 64, 64
+#define BEIGE2 204, 204, 153
+#define OLIVE_DRAB 107, 142, 35
+#define KHAKI 240, 230, 140
+#define SANDY_BROWN 244, 164, 96
+#define SIENNA 160, 82, 45
+#define CORAL 255, 127, 80
+#define SALMON 250, 128, 114
+#define TOMATO 255, 99, 71
+#define ORCHID 218, 112, 214
+#define THISTLE 216, 191, 216
+#define PLUM 221, 160, 221
+#define DEEP_PINK 255, 20, 147

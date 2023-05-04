@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "defines.h": "c",
+        "animations.h": "c",
+        "delay.h": "c",
+        "io.h": "c",
+        "new": "c",
+        "bitmasks.h": "c"
+    }
+}
