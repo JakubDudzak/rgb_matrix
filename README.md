@@ -156,7 +156,8 @@ Tieto hodnoty sú dostatočné pre plynulý chod LED displeja, pri zachovaní č
 ## Časovanie AD prevodníka
 Ak je prescaler nastavený na 128 a taktovacia frekvencia procesora je 16 MHz (štandardné nastavenie pre Arduino Uno, ktoré používa ATmega328P), frekvencia prevodníka je 16 MHz / 128 = 125 kHz.
 
-Pokiaľ ide o časovanie volania ISR(ADC_vect), to je určené tým, ako rýchlo dokáže ADC dokončiť prevod. ADC ATmega328P potrebuje na prevod približne 13 ADC cyklov. Keďže frekvencia prevodníka je 125 kHz, čas potrebný na jeden prevod je 13 / 125 kHz = 104 µs.
+Pokiaľ ide o časovanie volania ISR(ADC_vect), to je určené tým, ako rýchlo dokáže ADC dokončiť prevod. ADC ATmega328P potrebuje na prevod približne 13 ADC cyklov. Keďže frekvencia prevodníka je 125 kHz, čas potrebný na jeden prevod je 13 / 125 kHz = 104 µs. 
+Teda `fadc = 125000/13 = 9615.38461538 Hz`. 
 
 ## Časovanie USART
 
@@ -210,7 +211,12 @@ Niektoré moderné zariadenia podporujú aj vyššie rýchlosti, ako je rýchly 
 
 Vzhľadom na tieto štandardy, hodnota `100000` v kóde znamená, že I2C komunikácia je nastavená na štandardný režim s rýchlosťou 100 kHz. Toto je typická a bezpečná rýchlosť pre väčšinu aplikácií, ktorá je podporovaná väčšinou I2C zariadení.
 
-
+## Zhrnutie
+- `focr = 4032,25806452 Hz` => `Tocr = 1/focr = 1/4032,25806452 s ≈ 248 us`
+- `fusart = 960 Hz` => `Tusart = 1/fusart = 1/960 s = 1041,67 us`
+- `fi2c = 100 kHz` => `Ti2c = 1/fi2c = 1/(100*1000) s = 10 us`
+- `fadc = 9615,38461538 Hz` => `Tadc = 1/fadc = 1/9615.38461538 s ≈ 104 us`
+- `F_CPU = 16 MHz` => `T_CPU = 1/16000000 = 62,5 ns`
 
 # Súbor `setup.c`
 
