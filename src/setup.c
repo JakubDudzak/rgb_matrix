@@ -10,10 +10,11 @@ inline void setup_timer(void){
 	// - Bits 0 and 1 (CS10 and CS11) to 1 to set clock prescaler to 64 (16MHz/64=250kHz)
 	TIMSK1 = 0b00000010; // Set Timer/Counter1 Interrupt Mask Register:
 	// - Bit 1 (OCIE1A) to 1 to enable interrupt on OCR1A match
-	OCR1A = OCR_VAL;         // Set output compare register to 30 (interrupt will be called every (30+1)*4us=124us)
+	OCR1A = OCR_VAL;         // Set output compare register to 30 (interrupt will be called every (OCR_VAL*PRESCALER)*4us=124us)
+	//focr = fclk/(2*PRESCALER*(OCR_VAL+1))
 }
 inline void setup_SPI(void){
-	// Enable SPI, set as Master, and set clock rate to fck/2
+	// Enable SPI, set as Master, and set clock rate to fck/16
 	SPCR |= (1<<SPE)|(1<<MSTR)|(1<<SPR0);
 }
 inline void setup_pins(void){

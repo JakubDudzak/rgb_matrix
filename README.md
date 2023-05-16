@@ -24,8 +24,6 @@ Tento kód v skratke funguje nasledovne:
 
 8. Na i2c displeji sa pri každom prijatí dát z USARTU vykreslia aktuálne farby, znak a hodnota potenciometra.
 
-
-
 # Použité technológie
 - práca s I/O, napríklad pri riadení tranzistorov, ktoré poskytujú prívod prúdu do jednotlivých riadkov.
 - A/D prevodník pre zaznamenávanie napätia na potenciometri
@@ -33,6 +31,174 @@ Tento kód v skratke funguje nasledovne:
 - SPI pre komunikáciu s posuvnými registrami
 - timer/counter pre obnovovanie hodnôt na displeji
 - UART pre komunikáciu s počítačom
+
+# Časovanie a obnovovacia frekvencia
+
+Ak by sme chceli vedieť obnovovaciu frekvenciu tohto displeja, musíme správne načasovať generovanie interruptov v časovači. Čas medzi interruptami musí byť dostatočný pre úplný zápis dát cez SPI zbernicu, ako aj ostatné inštrukcie, vykonávané v `ISR(TIMER1_COMPA_vect)`, ktorá sa vykoná pri zhode hodnoty v časovači s hodnotou OCR_VAL.
+
+Taktiež treba zvážiť, že spolu s časovaním sa na pozadí vykonávajú iné operácie asynchrónne, napríklad nastavovanie hodnôt jednotlivých pixelov, čítanie z AD prevodníka, alebo komunikácia s i2c zbernicou a teda je potrebné nechať pre tieto iné operácie dostatok času.
+
+## Nastavenie časovača
+
+Všeobecný vzťah pre frekvenciu časovania týchto interruptov je možné nájsť v datasheete na strane 121 a je následovný:
+ 
+`focr = F_CPU/(2*PRESCALER*(OCR_VAL+1))`
+
+Ak uvážime že:
+- `F_CPU` je 16 MHz, frekvencia oscilátora na arduino uno
+- `PRESCALER` je nastavený na 64
+- `OCR_VAL` je nastavený na 30
+Výslenú hodnotu frekvencie generovania interruptov je možné vypočítať následovne:
+
+`focr = 16000000/(2*64*(30+1)) = 4032.25806452 Hz`
+
+A teda čas pre generovanie jedného interruptu je:
+
+`t = 1/focr = 1/4032.25806452 = 248 us`
+
+Teda za týchto 248 mikrosekúnd je potrebné vykonať všetky inštrukcie v `ISR(TIMER1_COMPA_vect)`. 
+
+Za predpokladu, že je táto podmienka splnená, obnovovacia frekvencia obrazu je v našom prípade:
+
+`frefresh = focr/(PWM_SIZE*NUM_OF_ROWS)`, pretože nám treba pre každý riadok na displeji PWM_SIZE zápisov do registrov
+
+
+A keďže:
+- PWM_SIZE je nastavená na 8 (PWM môže dosiahnuť hodnoty od 0 po 8 bitov, kde 0 je 0% duty cycle a 8 bitov (0b11111111) je 100% duty cycle a  napr. 4 bity je 0b00001111, teda 50% duty cycle)
+- NUM_OF_ROWS je 8, teda počet riadkov na displeji
+
+Výsledná obvonovacia frekvencia je:
+
+`frefresh = 4032.25806452/(8*8) = 63 Hz`, čo je pre ľudské oko postačujúca obnovovacia frekvencia, aby nepostrehlo "blikanie".
+
+Pri zväčšení rozlíšenia PWM, alebo počtu riadkov by sme pre dosiahnutie rovnakého výsledku museli prerušenia generovať častejšie, čo je obmedzené rýchlosťou vykonávania inštrukcií v ISR, najmä zápisom do SPI, a môže to byť aj na úkor vykonávania iných asynchrónnych operácií.
+
+## Prispôsobenie inštrukcií v `ISR(TIMER1_COMPA_vect)`
+
+Funkcia vyzerá následovne:
+
+```c    ISR(TIMER1_COMPA_vect){
+            static uint8_t current_row=0;
+            static uint8_t pwm_level=0;
+
+
+            PORTB |= (1 << BLANK_PIN); //Blank pin HIGH
+            current_row = (!pwm_level) ? ((current_row + 1) & ROWS_MAX) : current_row;
+            write_row_to_spi_rgb(pwm_level,current_row);
+            pwm_level = (pwm_level + 1) & PWM_MAX;
+            PORTB |= (1 << LATCH_PIN);
+            PORTB &= ~(1 << LATCH_PIN); // Latch that new value (up and down)
+            PORTB &= ~(1 << BLANK_PIN);	// Turn LEDS on
+            PORTD = (current_row)<<2;	//(PORTD & ~(7 << 2)) | ((current_row) << 2);
+        }
+        void write_row_to_spi_rgb(uint8_t pwm_level,uint8_t row){
+            for(int register_no = BYTES_PER_ROW-1; register_no>=0; register_no--){
+                SPI_transfer(matrix_rgb[pwm_level][row][register_no]);
+            }
+        }
+        inline void SPI_transfer(uint8_t data){
+            SPDR = data;
+            while(!(SPSR & (1 << SPIF)));
+        }
+```
+Inicializáciu statických premenných za nás robí kompilátor, a sú staticky alokované už v zdrojovom kóde, preto na ich vykonanie nie sú potrebné žiadne inštrukcie.
+Čo sa týka ostatných operácií, bitové operácie zvyknú byť najrýchlejšie, čo sa týka ternárneho operátora (porovnávanie) a napríklad sčítavania, alebo prepisovania celého bajtu, tieto operácie sú náročnejšie na výpočtový výkon a potrebuju viac inštrukcií, ktoré môžu zaberať viac taktov procesora, preto ak je možné tak počet takýchto operácií treba minimalizovať.
+V dnešnej dobe sú však kompilátory múdre a vedia niektoré veci optimalizovať za nás a preto sa nedá bez podrobnej analýzy strojového kódu určiť počet inštrukcií.
+Pre neoptimalizovaný kompilátor AVR-GCC pre mikrokontrolér ATmega328P by sme mohli urobiť nasledujúce hrubé odhady:
+
+### Inštrukcie okrem `write_row_to_spi_rgb`
+1. Bitové zápisy: Budeme predpokladať, že bitové zápisy majú jednu inštrukciu. V kóde máme 4 takéto zápisy.
+2. Logické operácie: Budeme predpokladať, že logické operácie, ako napríklad ternárny operátor, majú približne 2 inštrukcie (porovnávanie máme jedno).
+3. Inkrementácie: Budeme predpokladať, že inkrementácie majú približne 2 inštrukcie (inkrementujeme 2 krát, ale v realite sa inkrementuje vždy raz, a druhý krát sa inkrementuje raz za NUM_OF_ROWS-krát. túto skutočnosť zanedbáme).
+4. Prepisy celého bajtu: Budeme predpokladať, že prepisy celého bajtu majú približne 2 inštrukcie (hodnotu bajtu prepisujeme trikrát).
+5. Bitové AND: Budeme predpokladať, že bitové AND majú jednu inštrukciu (AND robíme dvakrát).
+
+Pri taktovacej frekvencii mikrokontroléra ATmega328P 16 MHz, každá inštrukcia trvá 1 cyklus. Avšak niektoré inštrukcie vyžadujú viac cyklov, napríklad pri prístupe k pamäti alebo skokoch. Budeme predpokladať, že s pamäťou sa nenarába a všetky operácie sa vykonávajú v internej pamäti registrov v procesore a preto budeme predpokladať, že každá inštrukcia zaberá jeden takt.
+
+Celkový počet inštrukcií okrem volania funkcie je: `4+2+4+6+2=18` inštrukcií, teda 18 taktov procesora, teda celkový čas trvania týchto inštrukcií je `18/16000000=1125ns`.
+
+Je dôležité si uvedomiť, že tieto hodnoty sú len hrubými odhadmi a môžu sa líšiť v závislosti od konkrétnej implementácie kompilátora a nastavení prekladača.
+
+
+### Inštrukcie v `write_row_to_spi_rgb`
+1. Volanie a návrat z funkcie `write_row_to_spi_rgb()` sú dve oddelené inštrukcie, ktoré, povedzme, zaberajú každá tri inštrukcie, takže za to by sme mohli pridať 6 inštrukcií.
+2. Cyklus for: Budeme predpokladať, že inicializácia, inkrementácia a porovnanie v cykle for majú približne 6 inštrukcií.
+3. Volanie funkcie SPI_transfer(): Keďže sme označili SPI_transfer() ako inline funkciu, kompilátor by mohol túto funkciu vložiť priamo do kódu write_row_to_spi_rgb(). To znamená, že namiesto toho, aby sme museli volať a následne sa vrátiť z funkcie (čo by nás stálo približne 6 inštrukcií), kód z SPI_transfer() sa vykoná priamo v write_row_to_spi_rgb(). To nám môže ušetriť pár inštrukcií, ale presný počet závisí od toho, ako kompilátor implementuje inline funkcie. Pre jednoduchosť predpokladajme, že inline funkcia nám ušetrí všetky inštrukcie spojené s volaním a návratom z funkcie, takže pre volanie SPI_transfer() budeme počítať len inštrukcie v samotnej SPI_transfer().
+4. Inštrukcie v SPI_transfer(): predpokladáme, že inicializácia registra bude mať dve inštrukcie. Trvanie cyklu while však nemusíme rátať približne, ale vieme ho presne určiť z nastavenia časovania SPI.
+```c 
+    // Enable SPI, set as Master, and set clock rate to fck/16
+	SPCR |= (1<<SPE)|(1<<MSTR)|(1<<SPR0);
+```
+Kedže `fsck = F_CPU/16 = 1MHz`, zápis celého bajtu bude s frekvenciou `fbyte=fsck/8 = 125kHz` a aby nám sedeli počty, vyjadríme si to počtom inštrukcií, teda `8*16=128 inštrukcií`.
+Táto hodnota vyjadruje dobu čakania na vyprázdnenie registra, teda medzikrokové porovnávanie neuvažujeme. Môžme uvážiť posledné porovnanie, kedy podmienka nebude platiť, teda prirátame dve inštrukcie.
+
+Teda keďže doba trvania funkcie SPI_transfer je (128+2) inštrukcií, opakuje sa to BYTES_PER_ROW-krát (teda 4 krát), počas čoho pripočítame tri inštrukcie pre každý cyklus a do celkového výsledku prirátame aj inštrukcie pre volanie funkcie, dostaneme odhad počtu inštrukcií pre zápis celého riadku cez SPI.
+
+`N = (128+2+3)*4+6 = 538`
+teda `fspi = 16000000/538 = 29,7397769517 kHz`
+
+### Celkový počet inštrukcií
+
+`Ncelkovy = 538 + 18 = 556 inštrukcií`, teda maximálna možná frekvencia generovania interruptov by mala byť menšia ako `fisrmax = 16000000/556 = 28,7769784173 kHz`, čo je s prihliadnutím na `focr = 16000000/(2*64*(30+1)) = 4032.25806452 Hz` splnené s prehľadom. V dôsledku toho má procesor po vrátení z ISR čas na ostatné záležitosti, ako napríklad čítanie z AD prevodníka, alebo komunikáciu s i2c, alebo s USARTom.
+
+## Časovanie AD prevodníka
+Ak je prescaler nastavený na 128 a taktovacia frekvencia procesora je 16 MHz (štandardné nastavenie pre Arduino Uno, ktoré používa ATmega328P), frekvencia prevodníka je 16 MHz / 128 = 125 kHz.
+
+Pokiaľ ide o časovanie volania ISR(ADC_vect), to je určené tým, ako rýchlo dokáže ADC dokončiť prevod. ADC ATmega328P potrebuje na prevod približne 13 ADC cyklov. Keďže frekvencia prevodníka je 125 kHz, čas potrebný na jeden prevod je 13 / 125 kHz = 104 µs.
+
+## Časovanie USART
+
+
+Časovanie USART sa nastavuje zapísaním hodnoty vypočítanej makrom `UBRR = (F_CPU / (16 * BAUD)) - 1`, kde BAUD je počet bitov za sekundu, v našom prípade nastavenom na 9600. 
+Výsledok tohto makra je 16 bitové číslo zapísane do registrov UBRR0L a UBRR0H.
+Keďže máme nastavený USART na 8 bitov, bez parity, jeden start, jeden stop bit, počet bitov je 10, teda spracovanie jedného signálu je `fusart = 9600/10 = 960 Hz`
+
+## Časovanie I2C
+```c
+    void setup_i2c(void)
+    {
+        // nastavenie rýchlosti I2C komunikácie
+        TWSR = 0x00;
+        TWBR = ((F_CPU / 100000UL) - 16) / 2;
+    }
+```
+Register `TWSR` je nastavený na hodnotu 0, teda aj jeho bity TWPS0 a TWPS1 sú nastavené na 0, v dôsledku čoho je prescaler 0.
+
+Vzorec na výpočet hodnoty `TWBR` je odvodený z datasheetu mikrokontroléra ATmega328P. Podľa tohto datasheetu, bitová rýchlosť I2C rozhrania (SCL) sa vypočíta pomocou nasledujúceho vzorca:
+
+```
+SCL = F_CPU / (16 + 2 * TWBR * PRESCALER)
+```
+
+kde `F_CPU` je taktovacia frekvencia procesora, `TWBR` je hodnota registra TWBR a `TWPS` je hodnota prescaleru (deliteľa taktu), ktorá je nastavená v registri TWSR.
+
+Ak je prescaler vypnutý (tj. `TWPS = 0`, čo zodpovedá `TWSR = 0x00`), vzorec sa zjednoduší na:
+
+```
+SCL = F_CPU / (16 + 2 * TWBR)
+```
+
+Ak chceme vypočítať hodnotu `TWBR` pre danú bitovú rýchlosť (SCL), môžeme tento vzorec upraviť na:
+
+```
+TWBR = ((F_CPU / SCL) - 16) / 2
+```
+
+Toto je presne vzorec, ktorý je použitý vo funkcii `setup_i2c()`.
+
+Hodnota `100000` je frekvencia hodinového signálu SCL (Serial Clock Line) v hertoch. Táto hodnota je typická pre štandardnú rýchlosť I2C komunikácie, ktorá je 100 kHz.
+
+I2C komunikačný protokol definuje tri štandardné rýchlosti:
+
+1. Nízka rýchlosť (Low speed): 10 kHz
+2. Štandardná rýchlosť (Standard mode): 100 kHz
+3. Rýchly režim (Fast mode): 400 kHz
+
+Niektoré moderné zariadenia podporujú aj vyššie rýchlosti, ako je rýchly režim plus (Fast mode plus): 1 MHz, alebo dokonca vysokorýchlostný režim (High-speed mode): 3.4 MHz.
+
+Vzhľadom na tieto štandardy, hodnota `100000` v kóde znamená, že I2C komunikácia je nastavená na štandardný režim s rýchlosťou 100 kHz. Toto je typická a bezpečná rýchlosť pre väčšinu aplikácií, ktorá je podporovaná väčšinou I2C zariadení.
+
+
 
 # Súbor `setup.c`
 
