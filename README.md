@@ -77,29 +77,30 @@ Pri zväčšení rozlíšenia PWM, alebo počtu riadkov by sme pre dosiahnutie r
 
 Funkcia vyzerá následovne:
 
-```c    ISR(TIMER1_COMPA_vect){
-            static uint8_t current_row=0;
-            static uint8_t pwm_level=0;
+```c    
+ISR(TIMER1_COMPA_vect){
+    static uint8_t current_row=0;
+    static uint8_t pwm_level=0;
 
 
-            PORTB |= (1 << BLANK_PIN); //Blank pin HIGH
-            current_row = (!pwm_level) ? ((current_row + 1) & ROWS_MAX) : current_row;
-            write_row_to_spi_rgb(pwm_level,current_row);
-            pwm_level = (pwm_level + 1) & PWM_MAX;
-            PORTB |= (1 << LATCH_PIN);
-            PORTB &= ~(1 << LATCH_PIN); // Latch that new value (up and down)
-            PORTB &= ~(1 << BLANK_PIN);	// Turn LEDS on
-            PORTD = (current_row)<<2;	//(PORTD & ~(7 << 2)) | ((current_row) << 2);
-        }
-        void write_row_to_spi_rgb(uint8_t pwm_level,uint8_t row){
-            for(int register_no = BYTES_PER_ROW-1; register_no>=0; register_no--){
-                SPI_transfer(matrix_rgb[pwm_level][row][register_no]);
-            }
-        }
-        inline void SPI_transfer(uint8_t data){
-            SPDR = data;
-            while(!(SPSR & (1 << SPIF)));
-        }
+    PORTB |= (1 << BLANK_PIN); //Blank pin HIGH
+    current_row = (!pwm_level) ? ((current_row + 1) & ROWS_MAX) : current_row;
+    write_row_to_spi_rgb(pwm_level,current_row);
+    pwm_level = (pwm_level + 1) & PWM_MAX;
+    PORTB |= (1 << LATCH_PIN);
+    PORTB &= ~(1 << LATCH_PIN); // Latch that new value (up and down)
+    PORTB &= ~(1 << BLANK_PIN);	// Turn LEDS on
+    PORTD = (current_row)<<2;	//(PORTD & ~(7 << 2)) | ((current_row) << 2);
+}
+void write_row_to_spi_rgb(uint8_t pwm_level,uint8_t row){
+    for(int register_no = BYTES_PER_ROW-1; register_no>=0; register_no--){
+        SPI_transfer(matrix_rgb[pwm_level][row][register_no]);
+    }
+}
+inline void SPI_transfer(uint8_t data){
+    SPDR = data;
+    while(!(SPSR & (1 << SPIF)));
+}
 ```
 Inicializáciu statických premenných za nás robí kompilátor, a sú staticky alokované už v zdrojovom kóde, preto na ich vykonanie nie sú potrebné žiadne inštrukcie.
 Čo sa týka ostatných operácií, bitové operácie zvyknú byť najrýchlejšie, čo sa týka ternárneho operátora (porovnávanie) a napríklad sčítavania, alebo prepisovania celého bajtu, tieto operácie sú náročnejšie na výpočtový výkon a potrebuju viac inštrukcií, ktoré môžu zaberať viac taktov procesora, preto ak je možné tak počet takýchto operácií treba minimalizovať.
@@ -140,6 +141,17 @@ teda `fspi = 16000000/538 = 29,7397769517 kHz`
 ### Celkový počet inštrukcií
 
 `Ncelkovy = 538 + 18 = 556 inštrukcií`, teda maximálna možná frekvencia generovania interruptov by mala byť menšia ako `fisrmax = 16000000/556 = 28,7769784173 kHz`, čo je s prihliadnutím na `focr = 16000000/(2*64*(30+1)) = 4032.25806452 Hz` splnené s prehľadom. V dôsledku toho má procesor po vrátení z ISR čas na ostatné záležitosti, ako napríklad čítanie z AD prevodníka, alebo komunikáciu s i2c, alebo s USARTom.
+
+Je dôležité zdôrazniť, že uvedené hodnoty sú hrubé odhady a skutočný počet inštrukcií môže byť iný, v závislosti na použitom kompilátore a jeho nastaveniach. Avšak súčasná implementácia a nastavenia umožňujú dosiahnutie potrebného časovania a obnovovacej frekvencie pre náš LED displej, čoho dôkazom je fungujúci hardvér. 
+
+Pre zhrnutie:
+
+- Obnovovacia frekvencia displeja je približne 63 Hz.
+- Maximálna frekvencia generovania interruptov je približne 28,77 kHz.
+- Čas pre generovanie jedného interruptu je 248 mikrosekúnd.
+- Celkový počet inštrukcií pre jedno prerušenie je odhadovaný na 556 inštrukcií.
+
+Tieto hodnoty sú dostatočné pre plynulý chod LED displeja, pri zachovaní času pre iné asynchrónne operácie. V prípade zväčšenia rozlíšenia PWM alebo počtu riadkov by bolo potrebné generovať prerušenia častejšie, čo môže mať dopad na vykonávanie ostatných operácií a celkovú efektivitu systému.
 
 ## Časovanie AD prevodníka
 Ak je prescaler nastavený na 128 a taktovacia frekvencia procesora je 16 MHz (štandardné nastavenie pre Arduino Uno, ktoré používa ATmega328P), frekvencia prevodníka je 16 MHz / 128 = 125 kHz.
@@ -186,7 +198,7 @@ TWBR = ((F_CPU / SCL) - 16) / 2
 
 Toto je presne vzorec, ktorý je použitý vo funkcii `setup_i2c()`.
 
-Hodnota `100000` je frekvencia hodinového signálu SCL (Serial Clock Line) v hertoch. Táto hodnota je typická pre štandardnú rýchlosť I2C komunikácie, ktorá je 100 kHz.
+Hodnota `100000` je frekvencia hodinového signálu SCL (Serial Clock Line) v hertzoch. Táto hodnota je typická pre štandardnú rýchlosť I2C komunikácie, ktorá je 100 kHz.
 
 I2C komunikačný protokol definuje tri štandardné rýchlosti:
 
